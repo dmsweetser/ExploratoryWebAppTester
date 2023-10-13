@@ -1,0 +1,6 @@
+gym==0.18.3
+numpy==1.26.0
+stable-baselines3==1.2.0
+selenium==4.0.0
+webdriver-manager==3.4.2
+Pillow==8.2.0
