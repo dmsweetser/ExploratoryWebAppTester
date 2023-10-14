@@ -46,6 +46,27 @@ def get_domain(url):
     parsed_url = urlparse(url)
     return parsed_url.netloc
 
+# Function to get the 1-based index of an element in its parent
+def get_element_index(element):
+    index = 1
+    for sibling in element.find_elements(By.XPATH, "preceding-sibling::*"):
+        if sibling.tag_name == element.tag_name:
+            index += 1
+    return index
+
+# Modify the get_absolute_xpath function to generate 1-based indices
+def get_absolute_xpath(element):
+    """
+    Get the absolute XPath of a WebElement with 1-based indices.
+    """
+    element_xpath = element.get_attribute("xpath")
+    if not element_xpath:
+        element_xpath = ""
+    else:
+        element_xpath += "/"
+    element_xpath += f"{element.tag_name}[{get_element_index(element)}]"
+    return element_xpath
+
 # Initialize the Selenium WebDriver
 chrome_driver_path = os.path.join(os.path.dirname(__file__), "chromedriver.exe")
 chrome_service = ChromeService(executable_path=chrome_driver_path)
@@ -93,6 +114,20 @@ class WebAppEnv(gym.Env):
         self.actions_sequence = [f"driver.get('{web_app_url}')"]  # Reset actions sequence with the initial navigation
         return self.state
 
+    def check_for_errors(self):
+        # Check for JavaScript errors in the console logs
+        logs = self.driver.get_log('browser')
+        for log in logs:
+            if log['level'] == 'SEVERE' and 'Error' in log['message']:
+                return True  # Indicate that an error occurred in the console logs
+
+        # Check for unhandled exceptions on the page
+        stack_trace_elements = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'unhandled exception')]")
+        if stack_trace_elements:
+            return True  # Indicate that an unhandled exception occurred on the page
+
+        return False  # No errors were found
+
     def step(self, action):
         if self.current_step >= max_steps:
             self.log_actions()  # Log actions even if max steps are reached
@@ -115,7 +150,7 @@ class WebAppEnv(gym.Env):
 
                     if valid_clickable_elements:
                         element_to_click = random.choice(valid_clickable_elements)
-                        element_xpath = self.get_absolute_xpath(element_to_click)
+                        element_xpath = get_absolute_xpath(element_to_click)
                         action_str = f"driver.find_element(By.XPATH, '{element_xpath}').click()"
                         if action_str != previous_action:
                             element_to_click.click()
@@ -130,7 +165,7 @@ class WebAppEnv(gym.Env):
                     if valid_input_elements:
                         element_to_input = random.choice(valid_input_elements)
                         random_text = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890') for _ in range(10))
-                        element_xpath = self.get_absolute_xpath(element_to_input)
+                        element_xpath = get_absolute_xpath(element_to_input)
                         action_str = f"driver.find_element(By.XPATH, '{element_xpath}').send_keys('{random_text}')"
                         if action_str != previous_action:
                             element_to_input.send_keys(random_text)
@@ -155,7 +190,7 @@ class WebAppEnv(gym.Env):
                         options = select.options
                         if options:
                             random_option = random.choice(options)
-                            element_xpath = self.get_absolute_xpath(element_to_select)
+                            element_xpath = get_absolute_xpath(element_to_select)
                             action_str = f"element = driver.find_element(By.XPATH, '{element_xpath}'); Select(element).select_by_value('{random_option.get_attribute('value')}')"
                             if action_str != previous_action:
                                 select.select_by_value(random_option.get_attribute("value"))
@@ -169,7 +204,7 @@ class WebAppEnv(gym.Env):
                     if valid_date_input_elements:
                         element_to_input = random.choice(valid_date_input_elements)
                         random_date = f"{random.randint(2000, 2023)}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}"
-                        element_xpath = self.get_absolute_xpath(element_to_input)
+                        element_xpath = get_absolute_xpath(element_to_input)
                         action_str = f"driver.find_element(By.XPATH, '{element_xpath}').send_keys('{random_date}')"
                         if action_str != previous_action:
                             element_to_input.send_keys(random_date)
@@ -181,7 +216,7 @@ class WebAppEnv(gym.Env):
             pass  # Continue to the next action
 
         # Check for JavaScript errors in the console logs
-        if check_for_js_errors(self.driver):
+        if self.check_for_errors():
             self.log_errors()
             self.log_actions()  # Log actions when an error is encountered
             reward = self.current_step + 1  # Reward increases with each step to maximize steps
@@ -234,61 +269,25 @@ class WebAppEnv(gym.Env):
             print(f"Exception encountered while saving actions: {e}")
             self.log_errors()
 
+    # Function to get the 1-based index of an element in its parent
+    def get_element_index(element):
+        index = 1
+        for sibling in element.find_elements(By.XPATH, "preceding-sibling::*"):
+            if sibling.tag_name == element.tag_name:
+                index += 1
+        return index
+
+    # Modify the get_absolute_xpath function to generate 1-based indices
     def get_absolute_xpath(element):
         """
-        Get the absolute XPath of a WebElement.
+        Get the absolute XPath of a WebElement with 1-based indices.
         """
-        element_xpath = self.driver.execute_script(
-            "function absoluteXPath(element) {"
-            "var comp, comps = [];"
-            "var parent = null;"
-            "var xpath = '';"
-            "var getPos = function(element) {"
-            "var position = 1, curNode;"
-            "if (element.nodeType == Node.ATTRIBUTE_NODE) {"
-            "return null;"
-            "}"
-            "for (curNode = element; curNode; curNode = curNode.previousSibling) {"
-            "if (curNode.nodeType === Node.ELEMENT_NODE) {"
-            "position++;"
-            "}"
-            "}"
-            "return position;"
-            "};"
-            "if (element instanceof Document) {"
-            "return '/';"
-            "}"
-            "for (; element && !(element instanceof Document); element = element.nodeType == Node.ATTRIBUTE_NODE ? element.ownerElement : element.parentNode) {"
-            "comp = comps[comps.length] = {};"
-            "switch (element.nodeType) {"
-            "case Node.TEXT_NODE:"
-            "comp.name = 'text()';"
-            "break;"
-            "case Node.ATTRIBUTE_NODE:"
-            "comp.name = '@' + element.nodeName;"
-            "break;"
-            "case Node.PROCESSING_INSTRUCTION_NODE:"
-            "comp.name = 'processing-instruction()';"
-            "break;"
-            "case Node.COMMENT_NODE:"
-            "comp.name = 'comment()';"
-            "break;"
-            "case Node.ELEMENT_NODE:"
-            "comp.name = element.nodeName;"
-            "break;"
-            "}"
-            "comp.position = getPos(element);"
-            "}"
-            "for (var i = comps.length - 1; i >= 0; i--) {"
-            "comp = comps[i];"
-            "xpath += '/' + comp.name.toLowerCase();"
-            "if (comp.position !== null) {"
-            "xpath += '[' + comp.position + ']';"
-            "}"
-            "}"
-            "return xpath;"
-            "};"
-            "return absoluteXPath(arguments[0]);", element)
+        element_xpath = element.get_attribute("xpath")
+        if not element_xpath:
+            element_xpath = ""
+        else:
+            element_xpath += "/"
+        element_xpath += f"{element.tag_name}[{get_element_index(element)}]"
         return element_xpath
 
 # Check if the model file exists in the /models directory
@@ -299,14 +298,6 @@ if os.path.exists(model_path):
 else :
     env = DummyVecEnv([lambda: WebAppEnv(driver)])
     model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_web_app_tensorboard/")
-
-# Function to check for JavaScript errors in the console logs
-def check_for_js_errors(driver):
-    logs = driver.get_log('browser')
-    for log in logs:
-        if log['level'] == 'SEVERE' and 'Error' in log['message']:
-            return True
-    return False
 
 # Train a Proximal Policy Optimization (PPO) agent
 model.learn(total_timesteps=max_episodes * max_steps)

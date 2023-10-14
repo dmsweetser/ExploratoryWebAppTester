@@ -2,21 +2,38 @@ import os
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import Select
-from selenium.common.exceptions import ElementNotInteractableException  # Add this import
-from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # Set the path to chromedriver.exe in the current directory
 chromedriver_path = os.path.join(os.getcwd(), "chromedriver.exe")
 
+# Define the folder path containing the generated Selenium steps scripts
+folder_path = "./generated-scripts"
+
+# Function to execute a Selenium steps script
+def execute_script(script_file_path, driver):
+    with open(script_file_path, "r") as script_file:
+        for line in script_file:
+            try:
+                # Add an explicit wait for the page to load
+                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, 'your_element_locator_here')))
+                exec(line, globals(), locals())
+            except Exception as e:
+                print(f"Error executing script line in {script_file_path}: {line}")
+                print(f"Error message: {e}")
+
+# Function to check for JavaScript errors in the console logs
+def check_for_js_errors(driver):
+    logs = driver.get_log('browser')
+    for log in logs:
+        if log['level'] == 'SEVERE' and 'Error' in log['message']:
+            return True
+    return False
+
 # Initialize the Selenium WebDriver
-chrome_service = ChromeService(executable_path=chromedriver_path)
-chrome_service.start()
-capabilities = DesiredCapabilities.CHROME
-capabilities['goog:loggingPrefs'] = {'browser': 'ALL'}
 chrome_options = webdriver.ChromeOptions()
-# chrome_options.add_argument("--headless")  # Run headless for testing
 chrome_options.add_argument("--disable-infobars")
 chrome_options.add_argument("--disable-extensions")
 chrome_options.add_argument("--disable-gpu")
@@ -30,26 +47,8 @@ chrome_options.add_argument("--disable-popup-blocking")
 chrome_options.add_argument("--disable-logging")  # Disable logging to console
 chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
 
-# Define the folder path containing the generated Selenium steps scripts
-folder_path = "./generated-scripts"
-
-# Function to execute a Selenium steps script
-def execute_script(script_file_path):
-    with open(script_file_path, "r") as script_file:
-        for line in script_file:
-            try:
-                exec(line)
-            except Exception as e:
-                print(f"Error executing script line in {script_file_path}: {line}")
-                print(f"Error message: {e}")
-
-# Function to check for JavaScript errors in the console logs
-def check_for_js_errors(driver):
-    logs = driver.get_log('browser')
-    for log in logs:
-        if log['level'] == 'SEVERE' and 'Error' in log['message']:
-            return True
-    return False
+capabilities = DesiredCapabilities.CHROME
+capabilities['goog:loggingPrefs'] = {'browser': 'ALL'}
 
 # Iterate over all files in the folder and run scripts
 for filename in os.listdir(folder_path):
@@ -61,7 +60,9 @@ for filename in os.listdir(folder_path):
         driver = webdriver.Chrome(executable_path=chromedriver_path, options=chrome_options, desired_capabilities=capabilities)
 
         try:
-            execute_script(script_file_path)
+            # Open the page before executing scripts
+            driver.get('https://localhost:7282/')
+            execute_script(script_file_path, driver)
 
             # Check for JavaScript errors in the console logs
             if check_for_js_errors(driver):
