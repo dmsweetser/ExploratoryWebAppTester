@@ -95,7 +95,7 @@ class WebAppEnv(gym.Env):
 
     def step(self, action):
         if self.current_step >= max_steps:
-            self.log_actions()  # Log actions even if max steps reached
+            self.log_actions()  # Log actions even if max steps are reached
             return self.state, 0, True, {}  # End of episode
 
         try:
@@ -106,54 +106,75 @@ class WebAppEnv(gym.Env):
                 self.actions_sequence.append(f"driver.back()")
             else:
                 # Perform the selected action
+                previous_action = self.actions_sequence[-1] if self.actions_sequence else None
+
                 if action == 0:  # Click
                     # Find clickable elements using CSS selectors
                     clickable_elements = self.driver.find_elements(By.CSS_SELECTOR, "a, button")
-                    if clickable_elements:
-                        # Randomly select a clickable element and click it
-                        element_to_click = random.choice(clickable_elements)
-                        element_to_click.click()
-                        self.actions_sequence.append(f"driver.find_element(By.CSS_SELECTOR, '{element_to_click.get_attribute('css selector')}').click()")
+                    valid_clickable_elements = [element for element in clickable_elements if element.is_displayed() and element.is_enabled()]
+
+                    if valid_clickable_elements:
+                        element_to_click = random.choice(valid_clickable_elements)
+                        element_xpath = self.get_absolute_xpath(element_to_click)
+                        action_str = f"driver.find_element(By.XPATH, '{element_xpath}').click()"
+                        if action_str != previous_action:
+                            element_to_click.click()
+                            self.actions_sequence.append(action_str)
 
                 # Implement the rest of the actions...
-                if action == 1:  # Input Text
+                elif action == 1:  # Input Text
                     # Find input fields using CSS selectors
                     input_elements = self.driver.find_elements(By.CSS_SELECTOR, "input[type='text'], input[type='password'], input[type='email']")
-                    if input_elements:
-                        # Randomly select an input field and enter random text
-                        element_to_input = random.choice(input_elements)
-                        random_text = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890') for i in range(10))
-                        element_to_input.send_keys(random_text)
-                        self.actions_sequence.append(f"driver.find_element(By.CSS_SELECTOR, '{element_to_input.get_attribute('css selector')}').send_keys('{random_text}')")
+                    valid_input_elements = [element for element in input_elements if element.is_displayed() and element.is_enabled()]
+
+                    if valid_input_elements:
+                        element_to_input = random.choice(valid_input_elements)
+                        random_text = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890') for _ in range(10))
+                        element_xpath = self.get_absolute_xpath(element_to_input)
+                        action_str = f"driver.find_element(By.XPATH, '{element_xpath}').send_keys('{random_text}')"
+                        if action_str != previous_action:
+                            element_to_input.send_keys(random_text)
+                            self.actions_sequence.append(action_str)
 
                 elif action == 2:  # Scroll
                     # Scroll the page (you can change the scroll amount)
                     scroll_amount = random.randint(1, 3) * 200  # You can adjust the scroll amount as needed
-                    self.driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
-                    self.actions_sequence.append(f"driver.execute_script('window.scrollBy(0, {scroll_amount});')")
+                    action_str = f"driver.execute_script('window.scrollBy(0, {scroll_amount});')"
+                    if action_str != previous_action:
+                        self.driver.execute_script(action_str)
+                        self.actions_sequence.append(action_str)
 
                 elif action == 3:  # Select Option
                     # Find select elements using CSS selectors
                     select_elements = self.driver.find_elements(By.CSS_SELECTOR, "select")
-                    if select_elements:
-                        # Randomly select a select element and choose a random option
-                        element_to_select = random.choice(select_elements)
+                    valid_select_elements = [element for element in select_elements if element.is_displayed() and element.is_enabled()]
+
+                    if valid_select_elements:
+                        element_to_select = random.choice(valid_select_elements)
                         select = Select(element_to_select)
                         options = select.options
                         if options:
                             random_option = random.choice(options)
-                            select.select_by_value(random_option.get_attribute("value"))
-                            self.actions_sequence.append(f"element = driver.find_element(By.CSS_SELECTOR, '{element_to_select.get_attribute('css selector')}'); Select(element).select_by_value('{random_option.get_attribute('value')}')")
+                            element_xpath = self.get_absolute_xpath(element_to_select)
+                            action_str = f"element = driver.find_element(By.XPATH, '{element_xpath}'); Select(element).select_by_value('{random_option.get_attribute('value')}')"
+                            if action_str != previous_action:
+                                select.select_by_value(random_option.get_attribute("value"))
+                                self.actions_sequence.append(action_str)
 
                 elif action == 4:  # Enter Date
                     # Find date input fields using CSS selectors
                     date_input_elements = self.driver.find_elements(By.CSS_SELECTOR, "input[type='date']")
-                    if date_input_elements:
-                        # Randomly select a date input field and enter a random date
-                        element_to_input = random.choice(date_input_elements)
+                    valid_date_input_elements = [element for element in date_input_elements if element.is_displayed() and element.is_enabled()]
+
+                    if valid_date_input_elements:
+                        element_to_input = random.choice(valid_date_input_elements)
                         random_date = f"{random.randint(2000, 2023)}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}"
-                        element_to_input.send_keys(random_date)
-                        self.actions_sequence.append(f"driver.find_element(By.CSS_SELECTOR, '{element_to_input.get_attribute('css selector')}').send_keys('{random_date}')")
+                        element_xpath = self.get_absolute_xpath(element_to_input)
+                        action_str = f"driver.find_element(By.XPATH, '{element_xpath}').send_keys('{random_date}')"
+                        if action_str != previous_action:
+                            element_to_input.send_keys(random_date)
+                            self.actions_sequence.append(action_str)
+
 
         except Exception as e:
             print(f"Exception encountered: {e}")
@@ -197,12 +218,12 @@ class WebAppEnv(gym.Env):
     def log_actions(self):
         current_url = self.driver.current_url
         current_time = time.strftime("%Y%m%d%H%M%S")
-        escaped_url = urllib.parse.quote(current_url, safe='')
+        sanitized_url = "".join(c if c.isalnum() or c in ['.', '-', '_'] else '_' for c in current_url)
 
         try:
             # Save generated Selenium steps script
             if self.actions_sequence:
-                selenium_steps_file = os.path.join(subfolder, f"{escaped_url}_{current_time}.py")
+                selenium_steps_file = os.path.join(subfolder, f"{sanitized_url}_{current_time}.py")
 
                 with open(selenium_steps_file, "w") as actions_file:
                     for action in self.actions_sequence:
@@ -212,6 +233,63 @@ class WebAppEnv(gym.Env):
         except Exception as e:
             print(f"Exception encountered while saving actions: {e}")
             self.log_errors()
+
+    def get_absolute_xpath(element):
+        """
+        Get the absolute XPath of a WebElement.
+        """
+        element_xpath = self.driver.execute_script(
+            "function absoluteXPath(element) {"
+            "var comp, comps = [];"
+            "var parent = null;"
+            "var xpath = '';"
+            "var getPos = function(element) {"
+            "var position = 1, curNode;"
+            "if (element.nodeType == Node.ATTRIBUTE_NODE) {"
+            "return null;"
+            "}"
+            "for (curNode = element; curNode; curNode = curNode.previousSibling) {"
+            "if (curNode.nodeType === Node.ELEMENT_NODE) {"
+            "position++;"
+            "}"
+            "}"
+            "return position;"
+            "};"
+            "if (element instanceof Document) {"
+            "return '/';"
+            "}"
+            "for (; element && !(element instanceof Document); element = element.nodeType == Node.ATTRIBUTE_NODE ? element.ownerElement : element.parentNode) {"
+            "comp = comps[comps.length] = {};"
+            "switch (element.nodeType) {"
+            "case Node.TEXT_NODE:"
+            "comp.name = 'text()';"
+            "break;"
+            "case Node.ATTRIBUTE_NODE:"
+            "comp.name = '@' + element.nodeName;"
+            "break;"
+            "case Node.PROCESSING_INSTRUCTION_NODE:"
+            "comp.name = 'processing-instruction()';"
+            "break;"
+            "case Node.COMMENT_NODE:"
+            "comp.name = 'comment()';"
+            "break;"
+            "case Node.ELEMENT_NODE:"
+            "comp.name = element.nodeName;"
+            "break;"
+            "}"
+            "comp.position = getPos(element);"
+            "}"
+            "for (var i = comps.length - 1; i >= 0; i--) {"
+            "comp = comps[i];"
+            "xpath += '/' + comp.name.toLowerCase();"
+            "if (comp.position !== null) {"
+            "xpath += '[' + comp.position + ']';"
+            "}"
+            "}"
+            "return xpath;"
+            "};"
+            "return absoluteXPath(arguments[0]);", element)
+        return element_xpath
 
 # Check if the model file exists in the /models directory
 model_path = os.path.join(model_dir, "ppo_web_app_model.zip")
@@ -249,7 +327,10 @@ for episode in range(max_episodes):
 
         if done:
             print(f"Total Reward: {total_reward}")
-            break
+            break  # Add this line to exit the episode loop when done
+
+    if episode + 1 == max_episodes:
+        break  # Add this line to exit the episode loop when max_episodes is reached
 
 # Close the environment
 env.close()
