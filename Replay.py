@@ -13,7 +13,7 @@ chrome_service.start()
 capabilities = DesiredCapabilities.CHROME
 capabilities['goog:loggingPrefs'] = {'browser': 'ALL'}
 chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--headless")  # Run headless for testing
+# chrome_options.add_argument("--headless")  # Run headless for testing
 chrome_options.add_argument("--disable-infobars")
 chrome_options.add_argument("--disable-extensions")
 chrome_options.add_argument("--disable-gpu")
