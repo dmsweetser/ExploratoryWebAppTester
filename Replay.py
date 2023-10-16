@@ -5,6 +5,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
 
 # Set the path to chromedriver.exe in the current directory
 chromedriver_path = os.path.join(os.getcwd(), "chromedriver.exe")
@@ -18,7 +19,7 @@ def execute_script(script_file_path, driver):
         for line in script_file:
             try:
                 # Add an explicit wait for the page to load
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, 'your_element_locator_here')))
+                # WebDriverWait(driver, 2).until(EC.presence_of_element_located((By.XPATH, 'your_element_locator_here')))
                 exec(line, globals(), locals())
             except Exception as e:
                 print(f"Error executing script line in {script_file_path}: {line}")
@@ -32,6 +33,9 @@ def check_for_js_errors(driver):
             return True
     return False
 
+# Initialize the ChromeService
+chrome_service = Service(executable_path=chromedriver_path)
+
 # Initialize the Selenium WebDriver
 chrome_options = webdriver.ChromeOptions()
 chrome_options.add_argument("--disable-infobars")
@@ -44,7 +48,7 @@ chrome_options.add_argument("--start-maximized")
 chrome_options.add_argument("--disable-notifications")
 chrome_options.add_argument("--ignore-certificate-errors")
 chrome_options.add_argument("--disable-popup-blocking")
-chrome_options.add_argument("--disable-logging")  # Disable logging to console
+chrome_options.add_argument("--disable-logging")  # Disable logging to consolezd
 chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
 
 capabilities = DesiredCapabilities.CHROME
@@ -56,8 +60,8 @@ for filename in os.listdir(folder_path):
         script_file_path = os.path.join(folder_path, filename)
         print(f"Executing script: {script_file_path}")
 
-        # Initialize the Selenium WebDriver for each script execution
-        driver = webdriver.Chrome(executable_path=chromedriver_path, options=chrome_options, desired_capabilities=capabilities)
+        # Initialize the WebDriver using the service
+        driver = webdriver.Chrome(service=chrome_service, options=chrome_options, desired_capabilities=capabilities)
 
         try:
             # Open the page before executing scripts

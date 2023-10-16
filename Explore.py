@@ -46,25 +46,34 @@ def get_domain(url):
     parsed_url = urlparse(url)
     return parsed_url.netloc
 
-# Function to get the 1-based index of an element in its parent
-def get_element_index(element):
-    index = 1
-    for sibling in element.find_elements(By.XPATH, "preceding-sibling::*"):
-        if sibling.tag_name == element.tag_name:
-            index += 1
-    return index
+# New function to generate a more robust XPATH with unique attributes or identifiers
+def get_robust_xpath(element):
+    """
+    Get a more robust XPath of a WebElement using unique attributes or identifiers.
+    """
+    element_id = element.get_attribute("id")
+    if element_id:
+        return f'//*[@id="{element_id}"]'
 
-# Modify the get_absolute_xpath function to generate 1-based indices
-def get_absolute_xpath(element):
-    """
-    Get the absolute XPath of a WebElement with 1-based indices.
-    """
+    element_name = element.get_attribute("name")
+    if element_name:
+        return f'//*[@name="{element_name}"]'
+
+    element_value = element.get_attribute("value")
+    if element_value:
+        return f'//*[contains(@value, "{element_value}")]'
+
+    element_text = element.text
+    if element_text:
+        return f'//*[contains(text(), "{element_text}")]'
+
+    # If no unique attributes are found, revert to a more general approach
     element_xpath = element.get_attribute("xpath")
     if not element_xpath:
         element_xpath = ""
     else:
         element_xpath += "/"
-    element_xpath += f"{element.tag_name}[{get_element_index(element)}]"
+    element_xpath += f"{element.tag_name}"
     return element_xpath
 
 # Initialize the Selenium WebDriver
@@ -105,13 +114,13 @@ class WebAppEnv(gym.Env):
 
         # Initialize the environment by navigating to the original URL
         self.driver.get(web_app_url)
-        self.actions_sequence.append(f"driver.get('{web_app_url}')")
+        self.actions_sequence.append(f'driver.get("{web_app_url}")')
 
     def reset(self):
         self.state = 0
         self.current_step = 0
         self.driver.get(web_app_url)
-        self.actions_sequence = [f"driver.get('{web_app_url}')"]  # Reset actions sequence with the initial navigation
+        self.actions_sequence = [f'driver.get("{web_app_url}")']  # Reset actions sequence with the initial navigation
         return self.state
 
     def check_for_errors(self):
@@ -122,7 +131,7 @@ class WebAppEnv(gym.Env):
                 return True  # Indicate that an error occurred in the console logs
 
         # Check for unhandled exceptions on the page
-        stack_trace_elements = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'unhandled exception')]")
+        stack_trace_elements = self.driver.find_elements(By.XPATH, '//*[contains(text(), "unhandled exception")]')
         if stack_trace_elements:
             return True  # Indicate that an unhandled exception occurred on the page
 
@@ -138,20 +147,20 @@ class WebAppEnv(gym.Env):
             current_domain = get_domain(self.driver.current_url)
             if current_domain != self.original_domain:
                 self.driver.back()  # Navigate back to the previous page
-                self.actions_sequence.append(f"driver.back()")
+                self.actions_sequence.append('driver.back()')
             else:
                 # Perform the selected action
                 previous_action = self.actions_sequence[-1] if self.actions_sequence else None
 
                 if action == 0:  # Click
                     # Find clickable elements using CSS selectors
-                    clickable_elements = self.driver.find_elements(By.CSS_SELECTOR, "a, button")
+                    clickable_elements = self.driver.find_elements(By.CSS_SELECTOR, 'a, button')
                     valid_clickable_elements = [element for element in clickable_elements if element.is_displayed() and element.is_enabled()]
 
                     if valid_clickable_elements:
                         element_to_click = random.choice(valid_clickable_elements)
-                        element_xpath = get_absolute_xpath(element_to_click)
-                        action_str = f"driver.find_element(By.XPATH, '{element_xpath}').click()"
+                        element_xpath = get_robust_xpath(element_to_click)
+                        action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').click()'
                         if action_str != previous_action:
                             element_to_click.click()
                             self.actions_sequence.append(action_str)
@@ -159,14 +168,14 @@ class WebAppEnv(gym.Env):
                 # Implement the rest of the actions...
                 elif action == 1:  # Input Text
                     # Find input fields using CSS selectors
-                    input_elements = self.driver.find_elements(By.CSS_SELECTOR, "input[type='text'], input[type='password'], input[type='email']")
+                    input_elements = self.driver.find_elements(By.CSS_SELECTOR, 'input[type="text"], input[type="password"], input[type="email"]')
                     valid_input_elements = [element for element in input_elements if element.is_displayed() and element.is_enabled()]
 
                     if valid_input_elements:
                         element_to_input = random.choice(valid_input_elements)
                         random_text = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890') for _ in range(10))
-                        element_xpath = get_absolute_xpath(element_to_input)
-                        action_str = f"driver.find_element(By.XPATH, '{element_xpath}').send_keys('{random_text}')"
+                        element_xpath = get_robust_xpath(element_to_input)
+                        action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').send_keys("{random_text}")'
                         if action_str != previous_action:
                             element_to_input.send_keys(random_text)
                             self.actions_sequence.append(action_str)
@@ -174,14 +183,14 @@ class WebAppEnv(gym.Env):
                 elif action == 2:  # Scroll
                     # Scroll the page (you can change the scroll amount)
                     scroll_amount = random.randint(1, 3) * 200  # You can adjust the scroll amount as needed
-                    action_str = f"driver.execute_script('window.scrollBy(0, {scroll_amount});')"
+                    action_str = f'driver.execute_script("window.scrollBy(0, {scroll_amount});")'
                     if action_str != previous_action:
                         self.driver.execute_script(action_str)
                         self.actions_sequence.append(action_str)
 
                 elif action == 3:  # Select Option
                     # Find select elements using CSS selectors
-                    select_elements = self.driver.find_elements(By.CSS_SELECTOR, "select")
+                    select_elements = self.driver.find_elements(By.CSS_SELECTOR, 'select')
                     valid_select_elements = [element for element in select_elements if element.is_displayed() and element.is_enabled()]
 
                     if valid_select_elements:
@@ -190,29 +199,29 @@ class WebAppEnv(gym.Env):
                         options = select.options
                         if options:
                             random_option = random.choice(options)
-                            element_xpath = get_absolute_xpath(element_to_select)
-                            action_str = f"element = driver.find_element(By.XPATH, '{element_xpath}'); Select(element).select_by_value('{random_option.get_attribute('value')}')"
+                            element_xpath = get_robust_xpath(element_to_select)
+                            action_str = f'element = driver.find_element(By.XPATH, \'{element_xpath}\'); Select(element).select_by_value("{random_option.get_attribute("value")}")'
                             if action_str != previous_action:
                                 select.select_by_value(random_option.get_attribute("value"))
                                 self.actions_sequence.append(action_str)
 
                 elif action == 4:  # Enter Date
                     # Find date input fields using CSS selectors
-                    date_input_elements = self.driver.find_elements(By.CSS_SELECTOR, "input[type='date']")
+                    date_input_elements = self.driver.find_elements(By.CSS_SELECTOR, 'input[type="date"]')
                     valid_date_input_elements = [element for element in date_input_elements if element.is_displayed() and element.is_enabled()]
 
                     if valid_date_input_elements:
                         element_to_input = random.choice(valid_date_input_elements)
                         random_date = f"{random.randint(2000, 2023)}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}"
-                        element_xpath = get_absolute_xpath(element_to_input)
-                        action_str = f"driver.find_element(By.XPATH, '{element_xpath}').send_keys('{random_date}')"
+                        element_xpath = get_robust_xpath(element_to_input)
+                        action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').send_keys("{random_date}")'
                         if action_str != previous_action:
                             element_to_input.send_keys(random_date)
                             self.actions_sequence.append(action_str)
 
 
         except Exception as e:
-            print(f"Exception encountered: {e}")
+            print(f'Exception encountered: {e}')
             pass  # Continue to the next action
 
         # Check for JavaScript errors in the console logs
@@ -269,34 +278,15 @@ class WebAppEnv(gym.Env):
             print(f"Exception encountered while saving actions: {e}")
             self.log_errors()
 
-    # Function to get the 1-based index of an element in its parent
-    def get_element_index(element):
-        index = 1
-        for sibling in element.find_elements(By.XPATH, "preceding-sibling::*"):
-            if sibling.tag_name == element.tag_name:
-                index += 1
-        return index
-
-    # Modify the get_absolute_xpath function to generate 1-based indices
-    def get_absolute_xpath(element):
-        """
-        Get the absolute XPath of a WebElement with 1-based indices.
-        """
-        element_xpath = element.get_attribute("xpath")
-        if not element_xpath:
-            element_xpath = ""
-        else:
-            element_xpath += "/"
-        element_xpath += f"{element.tag_name}[{get_element_index(element)}]"
-        return element_xpath
-
-# Check if the model file exists in the /models directory
+# Define the model path
 model_path = os.path.join(model_dir, "ppo_web_app_model.zip")
+
+# Create or load the model
+env = DummyVecEnv([lambda: WebAppEnv(driver)])
 if os.path.exists(model_path):
     # Load the pre-trained reinforcement learning model
     model = PPO.load(model_path)
-else :
-    env = DummyVecEnv([lambda: WebAppEnv(driver)])
+else:
     model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_web_app_tensorboard/")
 
 # Train a Proximal Policy Optimization (PPO) agent
