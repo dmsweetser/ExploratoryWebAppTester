@@ -83,7 +83,7 @@ chrome_service.start()
 capabilities = DesiredCapabilities.CHROME
 capabilities['goog:loggingPrefs'] = {'browser': 'ALL'}
 chrome_options = webdriver.ChromeOptions()
-# chrome_options.add_argument("--headless")  # Run headless for faster testing
+chrome_options.add_argument("--headless")  # Run headless for faster testing
 chrome_options.add_argument("--disable-infobars")
 chrome_options.add_argument("--disable-extensions")
 chrome_options.add_argument("--disable-gpu")
@@ -221,7 +221,7 @@ class WebAppEnv(gym.Env):
 
 
         except Exception as e:
-            print(f'Exception encountered: {e}')
+            # print(f'Exception encountered: {e}') # Uncomment to see all failures in log
             pass  # Continue to the next action
 
         # Check for JavaScript errors in the console logs
@@ -244,16 +244,16 @@ class WebAppEnv(gym.Env):
     def log_errors(self):
         current_url = self.driver.current_url
         current_time = time.strftime("%Y%m%d%H%M%S")
-        escaped_url = current_url.replace("/", "_").replace(":", "_")
+        sanitized_url = "".join(c if c.isalnum() or c in ['.', '-', '_'] else '_' for c in current_url)
 
         # Capture screenshot of the page
-        screenshot_file = os.path.join(subfolder, f"Error_{escaped_url}_{current_time}.png")
+        screenshot_file = os.path.join(subfolder, f"Error_{sanitized_url}_{current_time}.png")
         self.driver.save_screenshot(screenshot_file)
         print(f"Screenshot saved as {screenshot_file}")
 
         # Get and log console output
         logs = self.driver.get_log('browser')
-        console_log_file = os.path.join(subfolder, f"Error_{escaped_url}_{current_time}.log")
+        console_log_file = os.path.join(subfolder, f"Error_{sanitized_url}_{current_time}.log")
         with open(console_log_file, "w") as log_file:
             for log in logs:
                 log_file.write(f"[{log['level']}] - {log['message']}\n")
@@ -276,7 +276,6 @@ class WebAppEnv(gym.Env):
                 print(f"Generated Selenium steps saved as {selenium_steps_file}")
         except Exception as e:
             print(f"Exception encountered while saving actions: {e}")
-            self.log_errors()
 
 # Define the model path
 model_path = os.path.join(model_dir, "ppo_web_app_model.zip")
@@ -289,9 +288,11 @@ if os.path.exists(model_path):
 else:
     model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_web_app_tensorboard/")
 
+print(f"Training the model")
 # Train a Proximal Policy Optimization (PPO) agent
 model.learn(total_timesteps=max_episodes * max_steps)
 
+print(f"Saving the model")
 # Save the trained model
 model.save(model_path)
 

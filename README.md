@@ -9,3 +9,4 @@ Its goal is to generate Javascript errors on the page. The longer it takes to ge
 Ideally, this script can be used to generate complete regression test suites automatically for your application.
 
 It was tested with Python 3.7, Windows 10 and Chrome 117.
+
