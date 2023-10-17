@@ -22,9 +22,9 @@ web_app_url = input("Enter the web application URL: ")
 actions = ["click", "input_text", "scroll", "select_option", "enter_date"]
 num_actions = len(actions)
 
+# Both of these parameters can be increased to allow more thorough testing
 # Define the maximum number of episodes (testing sessions)
 max_episodes = 1
-
 # Define the maximum number of steps per episode
 max_steps = 100
 
@@ -218,6 +218,20 @@ class WebAppEnv(gym.Env):
                         if action_str != previous_action:
                             element_to_input.send_keys(random_date)
                             self.actions_sequence.append(action_str)
+
+            # Check for unexpected alerts
+            try:
+                alert = self.driver.switch_to.alert
+
+                if random.choice([True, False]):  # Randomly accept or dismiss
+                    alert.accept()  # Accept the alert (click OK)
+                    self.actions_sequence.append('alert.accept()')
+                else:
+                    alert.dismiss()  # Dismiss the alert (click Cancel)
+                    self.actions_sequence.append('alert.dismiss()')
+
+            except Exception:
+                pass  # No alert found
 
 
         except Exception as e:
