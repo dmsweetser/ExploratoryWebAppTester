@@ -24,9 +24,9 @@ num_actions = len(actions)
 
 # Both of these parameters can be increased to allow more thorough testing
 # Define the maximum number of episodes (testing sessions)
-max_episodes = 1
+max_episodes = 100
 # Define the maximum number of steps per episode
-max_steps = 100
+max_steps = 10000
 
 # Create a subfolder for generated scripts
 subfolder = "./generated-scripts"
@@ -124,11 +124,11 @@ class WebAppEnv(gym.Env):
         return self.state
 
     def check_for_errors(self):
-        # Check for JavaScript errors in the console logs
         logs = self.driver.get_log('browser')
         for log in logs:
-            if log['level'] == 'SEVERE' and 'Error' in log['message']:
-                return True  # Indicate that an error occurred in the console logs
+            if log['level'] in ('SEVERE', 'ERROR'):
+                print(f"[{log['level']}] - {log['message']}")
+                return True
 
         # Check for unhandled exceptions on the page
         stack_trace_elements = self.driver.find_elements(By.XPATH, '//*[contains(text(), "unhandled exception")]')
@@ -146,8 +146,10 @@ class WebAppEnv(gym.Env):
             # Check if the current domain is different from the original domain
             current_domain = get_domain(self.driver.current_url)
             if current_domain != self.original_domain:
-                self.driver.back()  # Navigate back to the previous page
-                self.actions_sequence.append('driver.back()')
+                self.driver.get(web_app_url)  # Navigate back to the original URL
+                self.actions_sequence.append(f'driver.get("{web_app_url}")')
+                self.current_step += 1  # Increment the step count
+                return self.state, 0, False, {}
             else:
                 # Perform the selected action
                 previous_action = self.actions_sequence[-1] if self.actions_sequence else None
@@ -235,7 +237,6 @@ class WebAppEnv(gym.Env):
 
 
         except Exception as e:
-            # print(f'Exception encountered: {e}') # Uncomment to see all failures in log
             pass  # Continue to the next action
 
         # Check for JavaScript errors in the console logs
@@ -261,16 +262,18 @@ class WebAppEnv(gym.Env):
         sanitized_url = "".join(c if c.isalnum() or c in ['.', '-', '_'] else '_' for c in current_url)
 
         # Capture screenshot of the page
-        screenshot_file = os.path.join(subfolder, f"Error_{sanitized_url}_{current_time}.png")
+        screenshot_file = os.path.join(subfolder, f"Error_{current_time}.png")
         self.driver.save_screenshot(screenshot_file)
         print(f"Screenshot saved as {screenshot_file}")
 
-        # Get and log console output
-        logs = self.driver.get_log('browser')
-        console_log_file = os.path.join(subfolder, f"Error_{sanitized_url}_{current_time}.log")
+        # Execute JavaScript to capture console logs
+        console_log_file = os.path.join(subfolder, f"Error_{current_time}.log")
+        
         with open(console_log_file, "w") as log_file:
-            for log in logs:
+            console_logs = self.driver.get_log("browser")
+            for log in console_logs:
                 log_file.write(f"[{log['level']}] - {log['message']}\n")
+        
         print(f"Console output saved as {console_log_file}")
 
     def log_actions(self):
@@ -281,7 +284,7 @@ class WebAppEnv(gym.Env):
         try:
             # Save generated Selenium steps script
             if self.actions_sequence:
-                selenium_steps_file = os.path.join(subfolder, f"{sanitized_url}_{current_time}.py")
+                selenium_steps_file = os.path.join(subfolder, f"Steps_{current_time}.py")
 
                 with open(selenium_steps_file, "w") as actions_file:
                     for action in self.actions_sequence:
