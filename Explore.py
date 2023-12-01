@@ -123,6 +123,22 @@ class WebAppEnv(gym.Env):
         self.actions_sequence = [f'driver.get("{web_app_url}")']  # Reset actions sequence with the initial navigation
         return self.state
 
+    def handle_interactable_exception(self, action, valid_elements):
+        try:
+            element_to_interact = random.choice(valid_elements)
+            element_xpath = get_robust_xpath(element_to_interact)
+            action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').{actions[action]}()'
+            if action_str != self.actions_sequence[-1]:
+                getattr(element_to_interact, actions[action])()
+                self.actions_sequence.append(action_str)
+        except ElementNotInteractableException:
+            # Handle ElementNotInteractableException by recursively calling the method
+            valid_elements.remove(element_to_interact)
+            if valid_elements:
+                self.handle_interactable_exception(action, valid_elements)
+            else:
+                print(f"All elements are not interactable for action: {actions[action]}")
+
     def check_for_errors(self):
         logs = self.driver.get_log('browser')
         for log in logs:
@@ -160,12 +176,15 @@ class WebAppEnv(gym.Env):
                     valid_clickable_elements = [element for element in clickable_elements if element.is_displayed() and element.is_enabled()]
 
                     if valid_clickable_elements:
-                        element_to_click = random.choice(valid_clickable_elements)
-                        element_xpath = get_robust_xpath(element_to_click)
-                        action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').click()'
-                        if action_str != previous_action:
-                            element_to_click.click()
-                            self.actions_sequence.append(action_str)
+                        try:
+                            element_to_click = random.choice(valid_clickable_elements)
+                            element_xpath = get_robust_xpath(element_to_click)
+                            action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').click()'
+                            if action_str != previous_action:
+                                element_to_click.click()
+                                self.actions_sequence.append(action_str)
+                        except ElementNotInteractableException:
+                            self.handle_interactable_exception(action, valid_clickable_elements)
 
                 # Implement the rest of the actions...
                 elif action == 1:  # Input Text
