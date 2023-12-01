@@ -1,5 +1,7 @@
 # Exploratory Web App Tester
 
+### Built in collaboration with generative AI
+
 The Exploratory Web App Tester is a python script that automatically interacts with your site via Selenium with a goal of generating Javascript errors.
 
 As it goes, it generates Python scripts for each set of steps, so they can be reused later on.
