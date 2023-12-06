@@ -1,5 +1,6 @@
 # This solution requires Python 3.9.7 to run
 
+import psutil
 import os
 import time
 import random
@@ -14,6 +15,19 @@ from selenium.webdriver.support.ui import Select
 from selenium.common.exceptions import ElementNotInteractableException  # Add this import
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+
+# Function to terminate chromedriver.exe processes
+def terminate_chromedriver_processes():
+    for process in psutil.process_iter(['pid', 'name']):
+        if 'chromedriver.exe' in process.info['name']:
+            try:
+                print(f"Terminating existing chromedriver.exe process (PID: {process.info['pid']})")
+                psutil.Process(process.info['pid']).terminate()
+            except Exception as e:
+                print(f"Failed to terminate process (PID: {process.info['pid']}), error: {e}")
+
+# Terminate existing chromedriver.exe processes before starting
+terminate_chromedriver_processes()
 
 # Accept the web application URL as user input
 web_app_url = input("Enter the web application URL: ")
@@ -285,15 +299,20 @@ class WebAppEnv(gym.Env):
         self.driver.save_screenshot(screenshot_file)
         print(f"Screenshot saved as {screenshot_file}")
 
-        # Execute JavaScript to capture console logs
-        console_log_file = os.path.join(subfolder, f"Error_{current_time}.log")
-        
-        with open(console_log_file, "w") as log_file:
+        # Redirect the script output to the error log file
+        error_log_file = os.path.join(subfolder, f"Error_{current_time}.log")
+        with open(error_log_file, "w") as log_file:
+            original_stdout = sys.stdout
+            sys.stdout = log_file  # Redirect output to the log file
+
+            # Print captured console logs to the log file
             console_logs = self.driver.get_log("browser")
             for log in console_logs:
-                log_file.write(f"[{log['level']}] - {log['message']}\n")
-        
-        print(f"Console output saved as {console_log_file}")
+                print(f"[{log['level']}] - {log['message']}")
+
+            sys.stdout = original_stdout  # Restore the original stdout
+
+        print(f"Error log saved as {error_log_file}")
 
     def log_actions(self):
         current_url = self.driver.current_url
@@ -313,42 +332,45 @@ class WebAppEnv(gym.Env):
         except Exception as e:
             print(f"Exception encountered while saving actions: {e}")
 
-# Define the model path
-model_path = os.path.join(model_dir, "ppo_web_app_model.zip")
+try:
+    # Define the model path
+    model_path = os.path.join(model_dir, "ppo_web_app_model.zip")
 
-# Create or load the model
-env = DummyVecEnv([lambda: WebAppEnv(driver)])
-if os.path.exists(model_path):
-    # Load the pre-trained reinforcement learning model
-    model = PPO.load(model_path)
-else:
-    model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_web_app_tensorboard/")
+    # Create or load the model
+    env = DummyVecEnv([lambda: WebAppEnv(driver)])
+    if os.path.exists(model_path):
+        # Load the pre-trained reinforcement learning model
+        model = PPO.load(model_path)
+    else:
+        model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_web_app_tensorboard/")
 
-print(f"Training the model")
-# Train a Proximal Policy Optimization (PPO) agent
-model.learn(total_timesteps=max_episodes * max_steps)
+    print(f"Training the model")
+    # Train a Proximal Policy Optimization (PPO) agent
+    model.learn(total_timesteps=max_episodes * max_steps)
 
-print(f"Saving the model")
-# Save the trained model
-model.save(model_path)
+    print(f"Saving the model")
+    # Save the trained model
+    model.save(model_path)
 
-# Test the trained agent
-for episode in range(max_episodes):
-    print(f"Episode {episode + 1}/{max_episodes}")
-    obs = env.reset()
-    total_reward = 0
+    # Test the trained agent
+    for episode in range(max_episodes):
+        print(f"Episode {episode + 1}/{max_episodes}")
+        obs = env.reset()
+        total_reward = 0
 
-    for step in range(max_steps):
-        action, _ = model.predict(obs)
-        obs, reward, done, _ = env.step(action)
-        total_reward += reward
+        for step in range(max_steps):
+            action, _ = model.predict(obs)
+            obs, reward, done, _ = env.step(action)
+            total_reward += reward
 
-        if done:
-            print(f"Total Reward: {total_reward}")
-            break  # Add this line to exit the episode loop when done
+            if done:
+                print(f"Total Reward: {total_reward}")
+                break  # Add this line to exit the episode loop when done
 
-    if episode + 1 == max_episodes:
-        break  # Add this line to exit the episode loop when max_episodes is reached
+        if episode + 1 == max_episodes:
+            break  # Add this line to exit the episode loop when max_episodes is reached
 
-# Close the environment
-env.close()
+    # Close the environment
+    env.close()
+except:
+    terminate_chromedriver_processes()
