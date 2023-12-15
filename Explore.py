@@ -6,6 +6,8 @@ import time
 import random
 import numpy as np
 import gym
+import sys
+from llama_cpp import Llama
 import urllib.parse
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -15,6 +17,49 @@ from selenium.webdriver.support.ui import Select
 from selenium.common.exceptions import ElementNotInteractableException  # Add this import
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+
+file_url = "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/blob/main/mistral-7b-instruct-v0.2.Q2_K.gguf"
+file_name = "mistral-7b-instruct-v0.2.Q2_K.gguf"
+
+# Check if the file already exists
+if not os.path.exists(file_name):
+    # If not, download the file
+    response = requests.get(file_url)
+    with open(file_name, "wb") as file:
+        file.write(response.content)
+    print(f"{file_name} downloaded successfully.")
+else:
+    print(f"{file_name} already exists in the current directory.")
+
+model_name = file_name
+
+# Define llama.cpp parameters
+llama_params = {
+    "loader": "llama.cpp",
+    "cpu": False,
+    "threads": 0,
+    "threads_batch": 0,
+    "n_batch": 512,
+    "no_mmap": False,
+    "mlock": True,
+    "no_mul_mat_q": False,
+    "n_gpu_layers": 0,
+    "tensor_split": "",
+    "n_ctx": 16384,
+    "compress_pos_emb": 1,
+    "alpha_value": 1,
+    "rope_freq_base": 0,
+    "numa": False,
+    "model": model_name,
+    "temperature": 1.0,
+    "top_p": 0.99,
+    "top_k": 85,
+    "repetition_penalty": 1.01,
+    "typical_p": 0.68,
+    "tfs": 0.68
+}
+
+llama = Llama(model_name, **llama_params)
 
 # Function to terminate chromedriver.exe processes
 def terminate_chromedriver_processes():
@@ -103,7 +148,7 @@ chrome_options.add_argument("--disable-extensions")
 chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--remote-debugging-port=9222")
+chrome_options.add_argument("--remote-debugging-port=9155")
 chrome_options.add_argument("--start-maximized")
 chrome_options.add_argument("--disable-notifications")
 chrome_options.add_argument("--ignore-certificate-errors")
@@ -208,7 +253,18 @@ class WebAppEnv(gym.Env):
 
                     if valid_input_elements:
                         element_to_input = random.choice(valid_input_elements)
-                        random_text = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890') for _ in range(10))
+                        
+                        # Get outerHTML of the element
+                        outer_html = element_to_input.get_attribute("outerHTML")
+                        print("Outer HTML of the element: " + outer_html)
+                        
+                        messages = [{"role": "system", "content": "What is a valid sample value I could use for this HTML input element? You must respond ONLY with a valid sample value AND NOTHING ELSE: " + outer_html}]
+                        response = llama.create_chat_completion(messages=messages)
+                        random_text = response['choices'][0]['message']['content'].strip()
+                        if random_text.startswith('"') and random_text.endswith('"'):
+                            random_text = random_text[1:-1]
+                        print("Sample input text provided by LLM: " + random_text)
+
                         element_xpath = get_robust_xpath(element_to_input)
                         action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').send_keys("{random_text}")'
                         if action_str != previous_action:
@@ -247,7 +303,18 @@ class WebAppEnv(gym.Env):
 
                     if valid_date_input_elements:
                         element_to_input = random.choice(valid_date_input_elements)
-                        random_date = f"{random.randint(2000, 2023)}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}"
+                        
+                        # Get outerHTML of the element
+                        outer_html = element_to_input.get_attribute("outerHTML")
+                        print("Outer HTML of the element: " + outer_html)
+                        
+                        messages = [{"role": "system", "content": "What is a valid sample date I could use for this HTML input element? ONLY RESPOND with the valid sample value: " + outer_html}]
+                        response = llama.create_chat_completion(messages=messages)
+                        random_date = response['choices'][0]['message']['content'].strip()
+                        if random_date.startswith('"') and random_date.endswith('"'):
+                            random_date = random_date[1:-1]
+                        print("Sample date provided by LLM: " + random_date)
+                        
                         element_xpath = get_robust_xpath(element_to_input)
                         action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').send_keys("{random_date}")'
                         if action_str != previous_action:
@@ -351,7 +418,7 @@ try:
     print(f"Saving the model")
     # Save the trained model
     model.save(model_path)
-
+       
     # Test the trained agent
     for episode in range(max_episodes):
         print(f"Episode {episode + 1}/{max_episodes}")
@@ -372,5 +439,6 @@ try:
 
     # Close the environment
     env.close()
-except:
+except Exception as e:
+    print(f"Exception encountered: {e}")
     terminate_chromedriver_processes()

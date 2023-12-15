@@ -5,3 +5,6 @@ selenium==4.0.0
 webdriver-manager==3.4.2
 Pillow==8.2.0
 tensorboard
+llama-cpp-python
+requests==2.26.0
+psutil
