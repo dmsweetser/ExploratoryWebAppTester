@@ -169,17 +169,20 @@ class WebAppEnv(gym.Env):
         self.current_step = 0
         self.driver = driver
         self.actions_sequence = []
+        self.uft_actions_sequence = []
         self.original_domain = get_domain(web_app_url)
 
         # Initialize the environment by navigating to the original URL
         self.driver.get(web_app_url)
         self.actions_sequence.append(f'driver.get("{web_app_url}")')
+        self.uft_actions_sequence.append(f'Browser("browser_name").Navigate {web_app_url}')
 
     def reset(self):
         self.state = 0
         self.current_step = 0
         self.driver.get(web_app_url)
         self.actions_sequence = [f'driver.get("{web_app_url}")']  # Reset actions sequence with the initial navigation
+        self.uft_actions_sequence = [f'Browser("browser_name").Navigate {web_app_url}']
         return self.state
 
     def handle_interactable_exception(self, action, valid_elements):
@@ -187,9 +190,12 @@ class WebAppEnv(gym.Env):
             element_to_interact = random.choice(valid_elements)
             element_xpath = get_robust_xpath(element_to_interact)
             action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').{actions[action]}()'
+            uft_action_str = f'Browser("browser_name").Page("page_name").WebButton("xpath=\'{element_xpath}\'").{actions[action]}'
             if action_str != self.actions_sequence[-1]:
                 getattr(element_to_interact, actions[action])()
                 self.actions_sequence.append(action_str)
+                self.uft_actions_sequence.append(uft_action_str)
+                
         except ElementNotInteractableException:
             # Handle ElementNotInteractableException by recursively calling the method
             valid_elements.remove(element_to_interact)
@@ -223,6 +229,8 @@ class WebAppEnv(gym.Env):
             if current_domain != self.original_domain:
                 self.driver.get(web_app_url)  # Navigate back to the original URL
                 self.actions_sequence.append(f'driver.get("{web_app_url}")')
+                self.uft_actions_sequence.append(f'Browser("browser_name").Navigate {web_app_url}')
+
                 self.current_step += 1  # Increment the step count
                 return self.state, 0, False, {}
             else:
@@ -239,9 +247,11 @@ class WebAppEnv(gym.Env):
                             element_to_click = random.choice(valid_clickable_elements)
                             element_xpath = get_robust_xpath(element_to_click)
                             action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').click()'
+                            uft_action_str = f'Browser("browser_name").Page("page_name").WebButton("xpath=\'{element_xpath}\'").Click'
                             if action_str != previous_action:
                                 element_to_click.click()
                                 self.actions_sequence.append(action_str)
+                                self.uft_actions_sequence.append(uft_action_str)
                         except ElementNotInteractableException:
                             self.handle_interactable_exception(action, valid_clickable_elements)
 
@@ -267,17 +277,21 @@ class WebAppEnv(gym.Env):
 
                         element_xpath = get_robust_xpath(element_to_input)
                         action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').send_keys("{random_text}")'
+                        uft_action_str = f'Browser("browser_name").Page("page_name").WebEdit("xpath=\'{element_xpath}\'").Set "{random_text}"'
                         if action_str != previous_action:
                             element_to_input.send_keys(random_text)
                             self.actions_sequence.append(action_str)
+                            self.uft_actions_sequence.append(uft_action_str)
 
                 elif action == 2:  # Scroll
                     # Scroll the page (you can change the scroll amount)
                     scroll_amount = random.randint(1, 3) * 200  # You can adjust the scroll amount as needed
                     action_str = f'driver.execute_script("window.scrollBy(0, {scroll_amount});")'
+                    uft_action_str = f'Browser("browser_name").Page("page_name").Object.parentWindow.scrollBy 0, {scroll_amount}'
                     if action_str != previous_action:
                         self.driver.execute_script(action_str)
                         self.actions_sequence.append(action_str)
+                        self.uft_actions_sequence.append(uft_action_str)
 
                 elif action == 3:  # Select Option
                     # Find select elements using CSS selectors
@@ -292,9 +306,11 @@ class WebAppEnv(gym.Env):
                             random_option = random.choice(options)
                             element_xpath = get_robust_xpath(element_to_select)
                             action_str = f'element = driver.find_element(By.XPATH, \'{element_xpath}\'); Select(element).select_by_value("{random_option.get_attribute("value")}")'
+                            uft_action_str = f'Browser("browser_name").Page("page_name").WebList("xpath=\'{element_xpath}\'").Select "{random_option.get_attribute("value")}"'
                             if action_str != previous_action:
                                 select.select_by_value(random_option.get_attribute("value"))
                                 self.actions_sequence.append(action_str)
+                                self.uft_actions_sequence.append(uft_action_str)
 
                 elif action == 4:  # Enter Date
                     # Find date input fields using CSS selectors
@@ -317,9 +333,11 @@ class WebAppEnv(gym.Env):
                         
                         element_xpath = get_robust_xpath(element_to_input)
                         action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').send_keys("{random_date}")'
+                        uft_action_str = f'Browser("browser_name").Page("page_name").WebEdit("xpath=\'{element_xpath}\'").Set "{random_date}"'
                         if action_str != previous_action:
                             element_to_input.send_keys(random_date)
                             self.actions_sequence.append(action_str)
+                            self.uft_actions_sequence.append(uft_action_str)
 
             # Check for unexpected alerts
             try:
@@ -328,9 +346,11 @@ class WebAppEnv(gym.Env):
                 if random.choice([True, False]):  # Randomly accept or dismiss
                     alert.accept()  # Accept the alert (click OK)
                     self.actions_sequence.append('alert.accept()')
+                    self.uft_actions_sequence.append('Browser("browser_name").Page("page_name").Dialog("micClass:=Dialog").Close micOk')
                 else:
                     alert.dismiss()  # Dismiss the alert (click Cancel)
                     self.actions_sequence.append('alert.dismiss()')
+                    self.uft_actions_sequence.append('Browser("browser_name").Page("page_name").Dialog("micClass:=Dialog").Close micCancel')
 
             except Exception:
                 pass  # No alert found
@@ -396,6 +416,14 @@ class WebAppEnv(gym.Env):
                         actions_file.write(f"{action}\n")
 
                 print(f"Generated Selenium steps saved as {selenium_steps_file}")
+                
+                uft_steps_file = os.path.join(subfolder, f"UFT_Steps_{current_time}.vb")
+
+                with open(uft_steps_file, "w") as uft_actions_file:
+                    for action in self.uft_actions_sequence:
+                        uft_actions_file.write(f"{action}\n")
+
+                print(f"Generated UFT steps saved as {uft_steps_file}")
         except Exception as e:
             print(f"Exception encountered while saving actions: {e}")
 
