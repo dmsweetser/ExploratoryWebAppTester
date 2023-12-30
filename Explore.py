@@ -7,6 +7,9 @@ import random
 import numpy as np
 import gym
 import sys
+import json
+import re
+import requests
 from llama_cpp import Llama
 import urllib.parse
 from stable_baselines3 import PPO
@@ -90,7 +93,7 @@ terminate_chromedriver_processes()
 web_app_url = input("Enter the web application URL: ")
 
 # Define the available actions, including "select_option" and "enter_date"
-actions = ["click", "input_text", "scroll", "select_option", "enter_date"]
+actions = ["click", "input_text", "scroll", "select_option", "enter_date", "select_radio"]
 num_actions = len(actions)
 
 # Both of these parameters can be increased to allow more thorough testing
@@ -138,7 +141,6 @@ def get_robust_xpath(element):
     if element_text:
         return f'//*[contains(text(), "{element_text}")]'
 
-    # If no unique attributes are found, revert to a more general approach
     element_xpath = element.get_attribute("xpath")
     if not element_xpath:
         element_xpath = ""
@@ -203,17 +205,17 @@ class WebAppEnv(gym.Env):
             element_xpath = get_robust_xpath(element_to_interact)
             action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').{actions[action]}()'
             uft_action_str = f'Browser("browser_name").Page("page_name").WebButton("xpath=\'{element_xpath}\'").{actions[action]}'
-            
+
             # Check if the current action_str is in the cache
             if action_str in action_str_cache:
                 print(f"Skipping step as action_str '{action_str}' is in the cache.")
                 return self.state, 0, False, {}
-            
+
             if action_str != self.actions_sequence[-1]:
                 getattr(element_to_interact, actions[action])()
                 self.actions_sequence.append(action_str)
                 self.uft_actions_sequence.append(uft_action_str)
-                
+
         except ElementNotInteractableException:
             # Handle ElementNotInteractableException by recursively calling the method
             valid_elements.remove(element_to_interact)
@@ -238,7 +240,7 @@ class WebAppEnv(gym.Env):
 
     def step(self, action):
         action_str = ""
-    
+
         if self.current_step >= max_steps:
             self.log_actions()  # Log actions even if max steps are reached
             return self.state, 0, True, {}  # End of episode
@@ -259,7 +261,7 @@ class WebAppEnv(gym.Env):
 
                 if action == 0:  # Click
                     # Find clickable elements using CSS selectors
-                    clickable_elements = self.driver.find_elements(By.CSS_SELECTOR, 'a, button')
+                    clickable_elements = self.driver.find_elements(By.CSS_SELECTOR, 'a, button, input[type="submit"]')
                     valid_clickable_elements = [element for element in clickable_elements if element.is_displayed() and element.is_enabled()]
 
                     if valid_clickable_elements:
@@ -267,13 +269,13 @@ class WebAppEnv(gym.Env):
                             element_to_click = random.choice(valid_clickable_elements)
                             element_xpath = get_robust_xpath(element_to_click)
                             action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').click()'
-                            uft_action_str = 'Browser("browser_name").Page("page_name").WebButton("xpath=' + element_xpath + '").Click'
-                                        
+                            uft_action_str = 'Browser("browser_name").Page("page_name").WebButton("xpath=\'{element_xpath}\'").Click'
+
                             # Check if the current action_str is in the cache
                             if action_str in action_str_cache:
                                 print(f"Skipping step as action_str '{action_str}' is in the cache.")
                                 return self.state, 0, False, {}
-                            
+
                             if action_str != previous_action:
                                 element_to_click.click()
                                 self.actions_sequence.append(action_str)
@@ -281,7 +283,6 @@ class WebAppEnv(gym.Env):
                         except ElementNotInteractableException:
                             self.handle_interactable_exception(action, valid_clickable_elements)
 
-                # Implement the rest of the actions...
                 elif action == 1:  # Input Text
                     # Find input fields using CSS selectors
                     input_elements = self.driver.find_elements(By.CSS_SELECTOR, 'input[type="text"], input[type="password"], input[type="email"]')
@@ -289,41 +290,54 @@ class WebAppEnv(gym.Env):
 
                     if valid_input_elements:
                         element_to_input = random.choice(valid_input_elements)
-                        
+
                         # Get outerHTML of the element
                         outer_html = element_to_input.get_attribute("outerHTML")
-                        print("Outer HTML of the element: " + outer_html)
-                        
-                        messages = [{"role": "system", "content": "What is a valid sample value I could use for this HTML input element? You must respond ONLY with a valid sample value AND NOTHING ELSE: " + outer_html}]
-                        
+                        escaped_outer_html = urllib.parse.quote(outer_html, safe='')
+
+                        messages = [{"role": "system", "content": f"What is a valid sample value I could use for this HTML input element? You must respond ONLY with a valid sample value AND NOTHING ELSE: {escaped_outer_html}"}]
+
                         response_str = ""
-                        # Check if the messages value is in the llama cache
-                        if messages in llama_cache:
+
+                        # Convert the first dictionary in messages to a tuple of (key, value) pairs
+                        messages_tuple = tuple(messages[0].items())
+                        
+                        if messages_tuple in llama_cache:
                             print(f"Using cached response for messages: {messages}")
-                            response_str = llama_cache[messages]
+                            response_str = llama_cache[messages_tuple]
                         else:
-                            # Call the model and update the llama cache
-                            response = llama.create_chat_completion(messages=messages)
-                            response_str = response['choices'][0]['message']['content'].strip()
+                            try:
+                                # Call the model and update the llama cache
+                                response = llama.create_chat_completion(messages=messages)
+                                print("Full Response:")
+                                print(response)
+                                response_str = response['choices'][0]['message']['content'].strip()
+                                print("Question: " + messages[0]['content'])
+                                print("Answer: " + response_str)
 
-                            # Extract the part in double-quotes
-                            match = re.search(r'"([^"]*)"', response_str)
-                            if match:
-                                response_str = match.group(1)
+                                # Extract the part in double-quotes
+                                match = re.search(r'"([^"]*)"', response_str)
+                                if match:
+                                    response_str = match.group(1)
 
-                            llama_cache[messages_str] = response_str   
+                                llama_cache[messages_tuple] = response_str
+                            except Exception as e:
+                                print(f"Error calling LLM: {e}")
+
                         print("Sample input text provided by LLM: " + response_str)
 
                         element_xpath = get_robust_xpath(element_to_input)
-                        action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').send_keys("{response_str}")'
-                        uft_action_str = f'Browser("browser_name").Page("page_name").WebEdit("xpath=\' + element_xpath + \'").Set "{response_str}"'
-                                    
+                        action_str = f'element = driver.find_element(By.XPATH, \'{element_xpath}\'); element.clear(); element.send_keys("{response_str}")'
+                        uft_action_str = f'Browser("browser_name").Page("page_name").WebEdit("xpath=\'{element_xpath}\'").Set "{response_str}"'
+
                         # Check if the current action_str is in the cache
                         if action_str in action_str_cache:
                             print(f"Skipping step as action_str '{action_str}' is in the cache.")
                             return self.state, 0, False, {}
-                        
+
                         if action_str != previous_action:
+                            # Clear existing text before entering new text
+                            element_to_input.clear()
                             element_to_input.send_keys(response_str)
                             self.actions_sequence.append(action_str)
                             self.uft_actions_sequence.append(uft_action_str)
@@ -333,12 +347,12 @@ class WebAppEnv(gym.Env):
                     scroll_amount = random.randint(1, 3) * 200  # You can adjust the scroll amount as needed
                     action_str = f'driver.execute_script("window.scrollBy(0, {scroll_amount});")'
                     uft_action_str = f'Browser("browser_name").Page("page_name").Object.parentWindow.scrollBy 0, {scroll_amount}'
-            
+
                     # Check if the current action_str is in the cache
                     if action_str in action_str_cache:
                         print(f"Skipping step as action_str '{action_str}' is in the cache.")
                         return self.state, 0, False, {}
-                    
+
                     if action_str != previous_action:
                         self.driver.execute_script(action_str)
                         self.actions_sequence.append(action_str)
@@ -358,12 +372,12 @@ class WebAppEnv(gym.Env):
                             element_xpath = get_robust_xpath(element_to_select)
                             action_str = f'element = driver.find_element(By.XPATH, \'{element_xpath}\'); Select(element).select_by_value("{random_option.get_attribute("value")}")'
                             uft_action_str = f'Browser("browser_name").Page("page_name").WebList("xpath=\'{element_xpath}\'").Select "{random_option.get_attribute("value")}"'
-                                        
+
                             # Check if the current action_str is in the cache
                             if action_str in action_str_cache:
                                 print(f"Skipping step as action_str '{action_str}' is in the cache.")
                                 return self.state, 0, False, {}
-                                                        
+
                             if action_str != previous_action:
                                 select.select_by_value(random_option.get_attribute("value"))
                                 self.actions_sequence.append(action_str)
@@ -376,46 +390,73 @@ class WebAppEnv(gym.Env):
 
                     if valid_date_input_elements:
                         element_to_input = random.choice(valid_date_input_elements)
-                        
+
                         # Get outerHTML of the element
                         outer_html = element_to_input.get_attribute("outerHTML")
-                        print("Outer HTML of the element: " + outer_html)
-                        
-                        messages = [{"role": "system", "content": "What is a valid sample date I could use for this HTML input element? ONLY RESPOND with the valid sample value: " + outer_html}]
-                        
-                        print("Message string: " + messages);
-                        
+                        escaped_outer_html = urllib.parse.quote(outer_html, safe='')
+
+                        messages = [{"role": "system", "content": f"What is a valid sample date I could use for this HTML input element? ONLY RESPOND with the valid sample value: {escaped_outer_html}"}]
+
                         response_str = ""
-                        # Check if the messages value is in the llama cache
-                        if messages in llama_cache:
+
+                        # Convert the first dictionary in messages to a tuple of (key, value) pairs
+                        messages_tuple = tuple(messages[0].items())
+
+                        if messages_tuple in llama_cache:
                             print(f"Using cached response for messages: {messages}")
-                            response_str = llama_cache[messages]
+                            response_str = llama_cache[messages_tuple]
                         else:
-                            print("got here")
-                            # Call the model and update the llama cache
-                            response = llama.create_chat_completion(messages=messages)
-                            response_str = response['choices'][0]['message']['content'].strip()
+                            try:
+                                # Call the model and update the llama cache
+                                response = llama.create_chat_completion(messages=messages)
+                                print("Full Response:")
+                                print(response)
+                                response_str = response['choices'][0]['message']['content'].strip()
+                                print("Question: " + messages[0]['content'])
+                                print("Answer: " + response_str)
 
-                            # Extract the part in double-quotes
-                            match = re.search(r'"([^"]*)"', response_str)
-                            if match:
-                                response_str = match.group(1)
+                                # Extract the part in double-quotes
+                                match = re.search(r'"([^"]*)"', response_str)
+                                if match:
+                                    response_str = match.group(1)
 
-                            llama_cache[messages_str] = response_str       
-                        
-                        print("Sample date provided by LLM: " + response_str)
-                        
+                                llama_cache[messages_tuple] = response_str
+                            except Exception as e:
+                                print(f"Error calling LLM: {e}")
+
                         element_xpath = get_robust_xpath(element_to_input)
                         action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').send_keys("{response_str}")'
                         uft_action_str = f'Browser("browser_name").Page("page_name").WebEdit("xpath=\'{element_xpath}\'").Set "{response_str}"'
-                                    
+
                         # Check if the current action_str is in the cache
                         if action_str in action_str_cache:
                             print(f"Skipping step as action_str '{action_str}' is in the cache.")
                             return self.state, 0, False, {}
-                                                
+
                         if action_str != previous_action:
                             element_to_input.send_keys(response_str)
+                            self.actions_sequence.append(action_str)
+                            self.uft_actions_sequence.append(uft_action_str)
+                            #
+
+                elif action == 5:  # Select Radio
+                    # Find radio elements using CSS selectors
+                    radio_elements = self.driver.find_elements(By.CSS_SELECTOR, 'input[type="radio"]')
+                    valid_radio_elements = [element for element in radio_elements if element.is_displayed() and element.is_enabled()]
+
+                    if valid_radio_elements:
+                        element_to_select = random.choice(valid_radio_elements)
+                        element_xpath = get_robust_xpath(element_to_select)
+                        action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').click()'
+                        uft_action_str = f'Browser("browser_name").Page("page_name").WebRadioGroup("xpath=\'{element_xpath}\'").Select'
+
+                        # Check if the current action_str is in the cache
+                        if action_str in action_str_cache:
+                            print(f"Skipping step as action_str '{action_str}' is in the cache.")
+                            return self.state, 0, False, {}
+
+                        if action_str != previous_action:
+                            element_to_select.click()
                             self.actions_sequence.append(action_str)
                             self.uft_actions_sequence.append(uft_action_str)
 
@@ -431,13 +472,12 @@ class WebAppEnv(gym.Env):
                     alert.dismiss()  # Dismiss the alert (click Cancel)
                     self.actions_sequence.append('alert.dismiss()')
                     self.uft_actions_sequence.append('Browser("browser_name").Page("page_name").Dialog("micClass:=Dialog").Close micCancel')
-
             except Exception:
                 pass  # No alert found
 
         except Exception as e:
             pass  # Continue to the next action
-        
+
         # Update the action_str cache
         action_str_cache.append(action_str)
         if len(action_str_cache) > 5:
@@ -500,7 +540,6 @@ class WebAppEnv(gym.Env):
                         actions_file.write(f"{action}\n")
 
                 print(f"Generated Selenium steps saved as {selenium_steps_file}")
-                
                 uft_steps_file = os.path.join(subfolder, f"UFT_Steps_{current_time}.vb")
 
                 with open(uft_steps_file, "w") as uft_actions_file:
@@ -530,7 +569,7 @@ try:
     print(f"Saving the model")
     # Save the trained model
     model.save(model_path)
-       
+
     # Test the trained agent
     for episode in range(max_episodes):
         print(f"Episode {episode + 1}/{max_episodes}")
