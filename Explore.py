@@ -60,7 +60,7 @@ llama_params = {
     "no_mul_mat_q": False,
     "n_gpu_layers": 0,
     "tensor_split": "",
-    "n_ctx": 16384,
+    "n_ctx": 2048,
     "compress_pos_emb": 1,
     "alpha_value": 1,
     "rope_freq_base": 0,
@@ -295,7 +295,7 @@ class WebAppEnv(gym.Env):
                         outer_html = element_to_input.get_attribute("outerHTML")
                         escaped_outer_html = urllib.parse.quote(outer_html, safe='')
 
-                        messages = [{"role": "system", "content": f"What is a valid sample value I could use for this HTML input element? You must respond ONLY with a valid sample value AND NOTHING ELSE: {escaped_outer_html}"}]
+                        messages = [{"role": "system", "content": f"What is a valid sample value I could use for this HTML input element? Please respond ONLY with a valid sample value in double quotes AND NOTHING ELSE: {escaped_outer_html}"}]
 
                         response_str = ""
 
@@ -395,7 +395,7 @@ class WebAppEnv(gym.Env):
                         outer_html = element_to_input.get_attribute("outerHTML")
                         escaped_outer_html = urllib.parse.quote(outer_html, safe='')
 
-                        messages = [{"role": "system", "content": f"What is a valid sample date I could use for this HTML input element? ONLY RESPOND with the valid sample value: {escaped_outer_html}"}]
+                        messages = [{"role": "system", "content": f"What is a valid sample date I could use for this HTML input element? Please respond ONLY with the valid sample value in double quotes and NOTHING ELSE: {escaped_outer_html}"}]
 
                         response_str = ""
 
@@ -476,11 +476,13 @@ class WebAppEnv(gym.Env):
                 pass  # No alert found
 
         except Exception as e:
+            # Clear the cache in case it is contributing
+            llama_cache = {}
             pass  # Continue to the next action
 
         # Update the action_str cache
         action_str_cache.append(action_str)
-        if len(action_str_cache) > 5:
+        if len(action_str_cache) > 20:
             action_str_cache.pop(0)
 
         # Check for JavaScript errors in the console logs
