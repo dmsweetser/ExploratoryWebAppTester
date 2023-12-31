@@ -33,7 +33,7 @@ if os.path.exists(llama_cache_file):
     with open(llama_cache_file, "r") as f:
         llama_cache = json.load(f)
 
-file_url = "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/blob/main/mistral-7b-instruct-v0.2.Q2_K.gguf"
+file_url = "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q2_K.gguf"
 file_name = "mistral-7b-instruct-v0.2.Q2_K.gguf"
 
 # Check if the file already exists
