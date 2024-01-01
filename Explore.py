@@ -224,20 +224,6 @@ class WebAppEnv(gym.Env):
             else:
                 print(f"All elements are not interactable for action: {actions[action]}")
 
-    def check_for_errors(self):
-        logs = self.driver.get_log('browser')
-        for log in logs:
-            if log['level'] in ('SEVERE', 'ERROR'):
-                print(f"[{log['level']}] - {log['message']}")
-                return True
-
-        # Check for unhandled exceptions on the page
-        stack_trace_elements = self.driver.find_elements(By.XPATH, '//*[contains(text(), "unhandled exception")]')
-        if stack_trace_elements:
-            return True  # Indicate that an unhandled exception occurred on the page
-
-        return False  # No errors were found
-
     def step(self, action):
         action_str = ""
 
@@ -269,7 +255,7 @@ class WebAppEnv(gym.Env):
                             element_to_click = random.choice(valid_clickable_elements)
                             element_xpath = get_robust_xpath(element_to_click)
                             action_str = f'driver.find_element(By.XPATH, \'{element_xpath}\').click()'
-                            uft_action_str = 'Browser("browser_name").Page("page_name").WebButton("xpath=\'{element_xpath}\'").Click'
+                            uft_action_str = f'Browser("browser_name").Page("page_name").WebButton("xpath=\'{element_xpath}\'").Click'
 
                             # Check if the current action_str is in the cache
                             if action_str in action_str_cache:
@@ -486,8 +472,7 @@ class WebAppEnv(gym.Env):
             action_str_cache.pop(0)
 
         # Check for JavaScript errors in the console logs
-        if self.check_for_errors():
-            self.log_errors()
+        if self.check_for_and_log_errors():
             self.log_actions()  # Log actions when an error is encountered
             reward = self.current_step + 1  # Reward increases with each step to maximize steps
             return self.state, reward, True, {}  # End of episode
@@ -502,30 +487,43 @@ class WebAppEnv(gym.Env):
     def close(self):
         self.driver.quit()
 
-    def log_errors(self):
+    def check_for_and_log_errors(self):
         current_url = self.driver.current_url
         current_time = time.strftime("%Y%m%d%H%M%S")
         sanitized_url = "".join(c if c.isalnum() or c in ['.', '-', '_'] else '_' for c in current_url)
 
-        # Capture screenshot of the page
-        screenshot_file = os.path.join(subfolder, f"Error_{current_time}.png")
-        self.driver.save_screenshot(screenshot_file)
-        print(f"Screenshot saved as {screenshot_file}")
-
         # Redirect the script output to the error log file
         error_log_file = os.path.join(subfolder, f"Error_{current_time}.log")
-        with open(error_log_file, "w") as log_file:
-            original_stdout = sys.stdout
-            sys.stdout = log_file  # Redirect output to the log file
+        errors_found = False
+        error_messages = []
 
-            # Print captured console logs to the log file
-            console_logs = self.driver.get_log("browser")
-            for log in console_logs:
-                print(f"[{log['level']}] - {log['message']}")
+        # Check for unhandled exceptions on the page
+        stack_trace_elements = self.driver.find_elements(By.XPATH, '//*[contains(text(), "unhandled exception")]')
+        if stack_trace_elements:
+            errors_found = True
+            for element in stack_trace_elements:
+                error_messages.append('Unhandled Exception: \n' + element.text + '\n')
 
-            sys.stdout = original_stdout  # Restore the original stdout
+        logs = self.driver.get_log('browser')
+        for log in logs:
+            if log['level'] in ('SEVERE', 'ERROR'):
+                errors_found = True
+                print(f"SAVING [{log['level']}] - {log['message']}")
+                error_messages.append(f"[{log['level']}] - {log['message']}\n")
 
-        print(f"Error log saved as {error_log_file}")
+        if errors_found:
+            # Open the error log file and write the contents
+            with open(error_log_file, "w") as log_file:
+                for message in error_messages:
+                    log_file.write(message)
+
+            # Capture screenshot of the page
+            screenshot_file = os.path.join(subfolder, f"Error_{current_time}.png")
+            self.driver.save_screenshot(screenshot_file)
+            print(f"Screenshot saved as {screenshot_file}")
+            print(f"Error log saved as {error_log_file}")
+
+        return errors_found
 
     def log_actions(self):
         current_url = self.driver.current_url
