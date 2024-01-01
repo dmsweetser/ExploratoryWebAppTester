@@ -174,14 +174,15 @@ driver = webdriver.Chrome(options=chrome_options, desired_capabilities=capabilit
 
 # Custom Gym environment for the web application
 class WebAppEnv(gym.Env):
-    def __init__(self, driver):
+    def __init__(self, driver, llama_cache):
         super(WebAppEnv, self).__init__()
+        self.driver = driver
+        self.llama_cache = llama_cache
         self.action_space = gym.spaces.Discrete(num_actions)
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(max_steps,))  # Adjust the observation space accordingly
         
         self.state = 0  # Initial state
         self.current_step = 0
-        self.driver = driver
         self.actions_sequence = []
         self.uft_actions_sequence = []
         self.original_domain = get_domain(web_app_url)
@@ -463,7 +464,8 @@ class WebAppEnv(gym.Env):
 
         except Exception as e:
             # Clear the cache in case it is contributing
-            llama_cache = {}
+            self.llama_cache = {}
+            print(str(e))
             pass  # Continue to the next action
 
         # Update the action_str cache
@@ -555,7 +557,7 @@ try:
     model_path = os.path.join(model_dir, "ppo_web_app_model.zip")
 
     # Create or load the model
-    env = DummyVecEnv([lambda: WebAppEnv(driver)])
+    env = DummyVecEnv([lambda: WebAppEnv(driver, llama_cache)])
     if os.path.exists(model_path):
         # Load the pre-trained reinforcement learning model
         model = PPO.load(model_path)
