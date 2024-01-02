@@ -232,6 +232,8 @@ class WebAppEnv(gym.Env):
             self.log_actions()  # Log actions even if max steps are reached
             return self.state, 0, True, {}  # End of episode
 
+        print("Selected Action: " + str(action))
+
         try:
             # Check if the current domain is different from the original domain
             current_domain = get_domain(self.driver.current_url)
@@ -332,6 +334,7 @@ class WebAppEnv(gym.Env):
                 elif action == 2:  # Scroll
                     # Scroll the page (you can change the scroll amount)
                     scroll_amount = random.randint(1, 3) * 200  # You can adjust the scroll amount as needed
+                    script_to_execute = f"window.scrollBy(0, {scroll_amount});";
                     action_str = f'driver.execute_script("window.scrollBy(0, {scroll_amount});")'
                     uft_action_str = f'Browser("browser_name").Page("page_name").Object.parentWindow.scrollBy 0, {scroll_amount}'
 
@@ -341,7 +344,7 @@ class WebAppEnv(gym.Env):
                         return self.state, 0, False, {}
 
                     if action_str != previous_action:
-                        self.driver.execute_script(action_str)
+                        self.driver.execute_script(script_to_execute)
                         self.actions_sequence.append(action_str)
                         self.uft_actions_sequence.append(uft_action_str)
 
